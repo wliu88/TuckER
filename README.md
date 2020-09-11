@@ -26,9 +26,7 @@ WN18 | 0.953 | 0.958 | 0.955 | 0.949
 FB15k-237 | 0.358 | 0.544 | 0.394 | 0.266
 WN18RR | 0.470 | 0.526 | 0.482 | 0.443
 
-### Running a model
-
-To run the model with robot data (Robot or RobotCSE)
+### Running a model on robot data (Robot or RobotCSE)
 
   1. Prepare the split dir of each robot dataset (from APR codebase). Store the split in `/data/${dataset_name}/split`
   2. Run the following:
@@ -37,7 +35,7 @@ To run the model with robot data (Robot or RobotCSE)
                                            --lr 0.0005 --dr 1.0 --edim 200 --rdim 200 --input_dropout 0.3 
                                            --hidden_dropout1 0.4 --hidden_dropout2 0.5 --label_smoothing 0.1
     
-
+### Running a model
 To run the model, execute the following command:
 
      CUDA_VISIBLE_DEVICES=0 python main.py --dataset FB15k-237 --num_iterations 500 --batch_size 128
