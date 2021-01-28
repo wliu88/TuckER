@@ -22,6 +22,7 @@ class Data:
         self.relations = self.train_relations + [i for i in self.valid_relations \
                 if i not in self.train_relations] + [i for i in self.test_relations \
                 if i not in self.train_relations]
+        print("Number of entities: {}".format(len(self.entities)))
 
     def load_data(self, data_dir, data_type="train", reverse=False):
         with open("%s%s.txt" % (data_dir, data_type), "r") as f:

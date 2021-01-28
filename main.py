@@ -8,6 +8,9 @@ from torch.optim.lr_scheduler import ExponentialLR
 import argparse
 import os
 
+os.environ["CUDA_DEVICE_ORDER"]="PCI_BUS_ID" 
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
+
 
 def compute_scores(score_instances):
     """
@@ -45,10 +48,11 @@ def compute_scores(score_instances):
     
 class Experiment:
 
-    def __init__(self, learning_rate=0.0005, ent_vec_dim=200, rel_vec_dim=200, 
+    def __init__(self, results_dir, learning_rate=0.0005, ent_vec_dim=200, rel_vec_dim=200,
                  num_iterations=500, batch_size=128, decay_rate=0., cuda=False, 
                  input_dropout=0.3, hidden_dropout1=0.4, hidden_dropout2=0.5,
                  label_smoothing=0.):
+        self.results_dir = results_dir
         self.learning_rate = learning_rate
         self.ent_vec_dim = ent_vec_dim
         self.rel_vec_dim = rel_vec_dim
@@ -105,7 +109,7 @@ class Experiment:
             targets = targets.cuda()
         return np.array(batch), targets
 
-    def evaluate(self, model, data, data_pn=None, print_to_file=False):
+    def evaluate(self, model, data, data_pn=None, print_to_file=False, split=""):
         hits = []
         ranks = []
         for i in range(10):
@@ -115,7 +119,8 @@ class Experiment:
         er_vocab = self.get_er_vocab(self.get_data_idxs(d.data))
 
         # print("Number of data points: %d" % len(test_data_idxs))
-        
+
+        rel_score_instances = []
         for i in range(0, len(test_data_idxs), self.batch_size):
 
             # data_batch, _ = self.get_batch(er_vocab, test_data_idxs, i)
@@ -130,7 +135,18 @@ class Experiment:
                 e2_idx = e2_idx.cuda()
             predictions = model.forward(e1_idx, r_idx)
 
+            # [batch_size, 1]
+            if print_to_file:
+                row_indices = torch.arange(e2_idx.shape[0])
+                predictions_raw = predictions[row_indices, e2_idx]
+                predictions_raw = predictions_raw.cpu().numpy()
+                data_batch_raw = test_data_idxs[i:i+self.batch_size]
+                batch_score_instances = [(triple, score) for triple, score in zip(data_batch_raw, predictions_raw)]
+                rel_score_instances.extend(batch_score_instances)
+
+            # print("&&&")
             # print(data_batch.shape)
+            # print(predictions.shape)
             # predictions: [batch_size, num_entities]
             # er_vocab: {(e1, r): [e2 if (e1, r, e2)=True] }
             # data_batch: [batch_size, 3]
@@ -158,6 +174,18 @@ class Experiment:
                         hits[hits_level].append(1.0)
                     else:
                         hits[hits_level].append(0.0)
+
+        if print_to_file:
+            split_results_dir = os.path.join(self.results_dir, split)
+            if not os.path.exists(split_results_dir):
+                os.makedirs(split_results_dir)
+            results_filename = os.path.join(split_results_dir, "predictions.txt")
+            with open(results_filename, "w") as fh:
+                for rsi in sorted(rel_score_instances, key=lambda score_instance: score_instance[1])[::-1]:
+                    fh.write("{}\t{}\t{}\t{: <5}\n".format(self.idx2entity[rsi[0][0]],
+                                                           self.idx2relation[rsi[0][1]],
+                                                           self.idx2entity[rsi[0][2]],
+                                                           rsi[1]))
 
         # Important: added calculation of relation-wise AP score
         if data_pn:
@@ -271,22 +299,22 @@ class Experiment:
             # evaluation
             model.eval()
             with torch.no_grad():
-                print("Validation:")
-                self.evaluate(model, d.valid_data, d.valid_data_pn)
-                if not it%2:
+                if it%50 == 0:
+                    print("Validation:")
+                    self.evaluate(model, d.valid_data, d.valid_data_pn)
+
+                if it == self.num_iterations:
                     print("Test:")
-                    start_test = time.time()
-                    if it == self.num_iterations:
-                        self.evaluate(model, d.test_data, d.test_data_pn, print_to_file=True)
-                    else:
-                        self.evaluate(model, d.test_data, d.test_data_pn)
-                    print(time.time()-start_test)
+                    self.evaluate(model, d.valid_data, d.valid_data_pn, print_to_file=True, split="val")
+                    self.evaluate(model, d.test_data, d.test_data_pn, print_to_file=True, split="test")
            
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=str, default="FB15k-237", nargs="?",
-                    help="Which dataset to use: FB15k, FB15k-237, WN18, WN18RR or Robot.")
+                    help="Which dataset to use: FB15k, FB15k-237, WN18, WN18RR, Robot, RobotRick")
+    parser.add_argument("--override_dataset_path", type=str, default="", nargs="?",
+                        help="override dataset path")
     parser.add_argument("--path_dataset", type=bool, default=False, nargs="?",
                         help="Whether the dataset is in path-based format")
     parser.add_argument("--num_iterations", type=int, default=500, nargs="?",
@@ -311,20 +339,36 @@ if __name__ == '__main__':
                     help="Dropout after the second hidden layer.")
     parser.add_argument("--label_smoothing", type=float, default=0.1, nargs="?",
                     help="Amount of label smoothing.")
+    parser.add_argument("--results_dir", type=str, default="", nargs="?",
+                        help="Directory for storing results")
+    parser.add_argument("--random_seed", type=int, default=20, nargs="?",
+                    help="Random Seed")
 
     args = parser.parse_args()
+
     dataset = args.dataset
-    data_dir = "data/%s/" % dataset
+    if not args.override_dataset_path:
+        data_dir = "data/%s/" % dataset
+    else:
+        data_dir = args.override_dataset_path
+    if data_dir[:-1] != "/":
+        data_dir = data_dir + "/"
+
+    if not args.results_dir:
+        args.results_dir = os.path.join(os.getcwd(), "results")
+    if not os.path.exists(args.results_dir):
+        os.makedirs(args.results_dir)
+
     torch.backends.cudnn.deterministic = True 
-    seed = 20
+    seed = args.random_seed
     np.random.seed(seed)
     torch.manual_seed(seed)
-    if torch.cuda.is_available:
+    if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed) 
     d = Data(data_dir=data_dir, reverse=True, path_dataset=args.path_dataset)
-    experiment = Experiment(num_iterations=args.num_iterations, batch_size=args.batch_size, learning_rate=args.lr, 
-                            decay_rate=args.dr, ent_vec_dim=args.edim, rel_vec_dim=args.rdim, cuda=args.cuda,
-                            input_dropout=args.input_dropout, hidden_dropout1=args.hidden_dropout1, 
+    experiment = Experiment(args.results_dir, num_iterations=args.num_iterations, batch_size=args.batch_size,
+                            learning_rate=args.lr, decay_rate=args.dr, ent_vec_dim=args.edim, rel_vec_dim=args.rdim,
+                            cuda=args.cuda, input_dropout=args.input_dropout, hidden_dropout1=args.hidden_dropout1,
                             hidden_dropout2=args.hidden_dropout2, label_smoothing=args.label_smoothing)
     experiment.train_and_eval()
                 
