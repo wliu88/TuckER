@@ -1,0 +1,16 @@
+s:opened.a.02	s:empty.a.01	-1
+s:clean.a.01	s:opened.a.02	-1
+s:on.a.01	s:clean.a.01	-1
+s:off.a.01	s:sliced.a.01	-1
+s:sliced.a.01	s:broken.a.01	-1
+s:broken.a.01	s:clean.a.01	-1
+s:cooked.a.01	s:sliced.a.01	-1
+s:closed.a.01	s:dirty.a.01	-1
+s:whole.a.01	s:cooked.a.01	-1
+s:on.a.01	s:on.a.01	-1
+s:opened.a.02	s:clean.a.01	-1
+s:clean.a.01	s:on.a.01	-1
+s:whole.a.01	s:whole.a.01	-1
+s:off.a.01	s:full.a.01	-1
+s:off.a.01	s:whole.a.01	-1
+s:on.a.01	s:broken.a.01	-1

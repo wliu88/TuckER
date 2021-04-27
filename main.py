@@ -281,6 +281,8 @@ class Experiment:
                     else:
                         self.evaluate(model, d.test_data, d.test_data_pn)
                     print(time.time()-start_test)
+
+        self.model = model
            
 
 if __name__ == '__main__':
@@ -327,5 +329,92 @@ if __name__ == '__main__':
                             input_dropout=args.input_dropout, hidden_dropout1=args.hidden_dropout1, 
                             hidden_dropout2=args.hidden_dropout2, label_smoothing=args.label_smoothing)
     experiment.train_and_eval()
-                
 
+    print("Play around with the trained model")
+
+    entities = d.entities
+    relations = d.relations
+    entity_idxs = experiment.entity_idxs
+    relation_idxs = experiment.relation_idxs
+    idx2entity = experiment.idx2entity
+    model = experiment.model
+    use_cuda = experiment.cuda
+    
+    # sort entities
+    type2entities = {}
+    for e in entities:
+        t = e[0]
+        if t == "a":
+            typ = "action"
+        elif t == "l":
+            typ = "location"
+        elif t == "m":
+            typ = "material"
+        elif t == "o":
+            typ = "object"
+        elif t == "r":
+            typ = "room"
+        elif t == "s":
+            typ == "state" 
+        if typ not in type2entities:
+            type2entities[typ] = []
+        type2entities[typ].append(e)
+
+    while True:
+        print("")
+        print("="*100)
+        print("")
+        print("Choose a query relation from the following list:")
+        print(relations)
+        print("Note that the name of the relation suggests the correct type of the source and target entities")
+        print("e.g., for relation ObjInLoc, a type-correct triple will be (o:apple.n.01, ObjInLoc, l:fridge.n.01)")
+        while True:
+            r = input("-->type the name of chosen relation: ")
+            if r in relations:
+                break
+            else:
+                print("input relation {} is not defined".format(r))
+        print("")
+        
+        print("Choose a source entity from the following lists:")
+        for typ in type2entities:
+            print("{}: {}".format(typ, type2entities[typ]))
+        while True:
+            e1 = input("-->type the name of chosen entity: ")
+            if e1 in entities:
+                break
+            else:
+                print("input entity {} is not defined".format(r))
+        print("")
+
+        # e1 = 'r:bathroom.n.01'
+        # r2 = 'r:kitchen.n.01'
+
+        model.eval()
+        with torch.no_grad():
+            e1_idx = entity_idxs[e1]
+            r_idx = relation_idxs[r]
+            e1_idx = torch.tensor([e1_idx])
+            r_idx = torch.tensor([r_idx])
+
+            if use_cuda:
+                e1_idx = e1_idx.cuda()
+                r_idx = r_idx.cuda()
+
+            predictions = model.forward(e1_idx, r_idx)
+            predictions = predictions.cpu().numpy()[0]
+            score_instances = []
+            for i, s in enumerate(predictions):
+                score_instances.append((idx2entity[i], s))
+
+            score_instances = sorted(score_instances, key=lambda x: x[1])[::-1]
+            print("The model predicts the following 10 top answers:")
+            for k in range(10):
+                print("No.{} answer: {} (score: {})".format(k+1, score_instances[k][0], score_instances[k][1]))
+
+
+        f = input("-->continue? Y/N ")
+        if "n" in f.lower():
+            break
+            # batch_score_instances = [(triple, triple[3], score) for triple, score in zip(data_batch_raw, predictions)]
+            # rel_score_instances.extend(batch_score_instances)
